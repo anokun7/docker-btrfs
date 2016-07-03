@@ -23,9 +23,10 @@
 
 <p>Btrfs (pronounced better-fs) is a highly advanced and fully stable Linux file system that offers many compelling and useful features like Copy-On-Write, snapshotting, Raiding, and thin provisioning. Btrfs is the default filesystem on some systems like Suse / SLES and is being used by some very large financial organizations today. Within Docker, support for Btrfs is available in the form of a storage driver as of 1.10 (both open source and commercially supported versions). While Suse / SLES include btrfs as the default filesystem, it can be installed on almost every other linux flavor like Debian / Ubuntu and Red Hat / Centos systems. With the problems we see in using devicemapper and questions as to devicemapper's maintainability given that OverlayFS seems to be gaining more focus and attention, btrfs seems like a very good replacement for devicemapper on Red Hat based systems as Docker's preferred storage driver.</p>
 
-<h3><a id="designer-templates" class="anchor" href="#designer-templates" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Designer Templates</h3>
+<h3><a id="working-with-btrfs" class="anchor" href="#working-with-btrfs" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Working with Btrfs</h3>
 
-<p>We’ve crafted some handsome templates for you to use. Go ahead and click 'Continue to layouts' to browse through them. You can easily go back to edit your page before publishing. After publishing your page, you can revisit the page generator and switch to another theme. Your Page content will be preserved.</p>
+<p>In the sections below, we shall see how easy it is to work with Btrfs and specifically how to recover from disk out-of-space issues.</p>
+<p>What we'll use here is a stock Ubuntu 14.04.3 LTS system. We'll install Docker 1.11, the Btrfs package, configure Docker to use btrfs as the storage driver. We will then simulate a disk out-of-space issue and then look at steps to recover from it without losing any data or applications running on the system. For the purposes of understanding all commands are typed out by hand, and it is urged that these manual steps are automated to make the entire recovery process more reliable.</p>
 
 <h3>
 <a id="creating-pages-manually" class="anchor" href="#creating-pages-manually" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Creating pages manually</h3>
