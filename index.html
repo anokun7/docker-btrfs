@@ -29,13 +29,71 @@
 <p>What we'll use here is a stock Ubuntu 14.04.3 LTS system. We'll install Docker 1.11, the Btrfs package, configure Docker to use btrfs as the storage driver. We will then simulate a disk out-of-space issue and then look at steps to recover from it without losing any data or applications running on the system. For the purposes of understanding all commands are typed out by hand, and it is urged that these manual steps are automated to make the entire recovery process more reliable.</p>
 <ol>
   <li> <p>Let's login to our Ubuntu 14.04 box and check if btrfs is installed and available. Since, we will be dealing with making changes to filesystems it will be convenient to run all commands as root (or use sudo to prefix all commands).</p>
-  <pre><code>
-root@m1-host:-# btrfs
+  <pre><code>root@m1-host:-# btrfs
 The program 'btrfs' is currently not installed. You can install it by typing:
 apt-get install btrfs-tools
-root@m1-host:-#
-</code></pre>
+root@m1-host:-#</code></pre>
   <p>Expectedly, btrfs is not installed on this Ubuntu system<p></li>
+  <li><p>Let's install btrfs as shown in the output message above</p>
+  <pre><code>root@m1-host:-# apt-get install btrfs-tools
+Reading package lists... Done
+Building dependency tree
+Reading state information... Done
+The following extra packages will be installed:
+  liblzo2-2
+The following NEW packages will be installed:
+  btrfs-tools liblzo2-2
+0 upgraded, 2 newly installed, 0 to remove and 91 not upgraded.
+Need to get 380 kB of archives.
+After this operation, 2,692 kB of additional disk space will be used.
+Do you want to continue? [Y/n]
+Get:1 http://us-east-1.ec2.archive.ubuntu.com/ubuntu/ trusty-updates/main liblzo2-2 amd64 2.06-1.2ubuntu1.1 [46.1 kB]
+Get:2 http://us-east-1.ec2.archive.ubuntu.com/ubuntu/ trusty-updates/main btrfs-tools amd64 3.12-1ubuntu0.1 [334 kB]
+Fetched 380 kB in 0s (18.3 MB/s)
+Selecting previously unselected package liblzo2-2:amd64.
+(Reading database ... 62083 files and directories currently installed.)
+Preparing to unpack .../liblzo2-2_2.06-1.2ubuntu1.1_amd64.deb ...
+Unpacking liblzo2-2:amd64 (2.06-1.2ubuntu1.1) ...
+Selecting previously unselected package btrfs-tools.
+Preparing to unpack .../btrfs-tools_3.12-1ubuntu0.1_amd64.deb ...
+Unpacking btrfs-tools (3.12-1ubuntu0.1) ...
+Processing triggers for man-db (2.6.7.1-1ubuntu1) ...
+Setting up liblzo2-2:amd64 (2.06-1.2ubuntu1.1) ...
+Setting up btrfs-tools (3.12-1ubuntu0.1) ...
+update-initramfs: deferring update (trigger activated)
+Processing triggers for libc-bin (2.19-0ubuntu6.6) ...
+Processing triggers for initramfs-tools (0.103ubuntu4.2) ...
+update-initramfs: Generating /boot/initrd.img-3.13.0-87-generic
+root@m1-host:-#</code></pre></li>
+  <li><p>Now the btrfs command should work:</p>
+  <pre><code>root@m1-host:-# btrfs --version
+Btrfs v3.12
+root@m1-host:-#</code></pre></li>
+  <li><p>Also, ensure that the current version of docker is installed. The simplest way to get docker up and running is <code>curl -fsSL https://get.docker.com | sh</code></p></li>
+  <li><p>Btrfs works with block devices, so we would need one. Let's see what all block devices are attached to this system:</p>
+  <pre></code>root@m1-host:-# lsblk
+NAME    MAJ:MIN RM SIZE RO TYPE MOUNTPOINT
+xvda    202:0    0   8G  0 disk
+└─xvda1 202:1    0   8G  0 part /
+root@m1-host:-#</code></pre>
+  <p>There are no unpartitioned block devices on this system. The only one is the one on which the OS is installed. We need to add another one.</p>
+  <p>Since this is an AWS instance, I'm attaching two EBS instances, each 4GB in size.</p>
+  <p>Running <code>lsblk</code> command now should reflect the new block devices added.</p>
+  <pre><code>root@m1-host:-# lsblk
+NAME    MAJ:MIN  RM SIZE RO TYPE MOUNTPOINT
+xvda    202:0     0   8G  0 disk
+└─xvda1 202:1     0   8G  0 part /
+xvdx    202:5888  0   4G  0 disk
+xvdy    202:5888  0   4G  0 disk
+root@m1-host:-#</code></pre></li>
+  <li><p>We ned to change docker to use <code>btrfs</code> as the storage driver. Currently (as the default on Ubuntu), docker is using <code>extfs</code> as indicated by the output of <code>docker info | grep -i filesystem</code></p>
+  <pre></code>root@m1-host:-# docker info | grep Filesystem
+WARNING: No swap limit support
+ Backing Filesystem: extfs
+root@m1-host:-#</code></pre>
+  <p>So, let's shut down docker before we make any changes</p>
+  <p><i>Note: This is assuming that is a brand new docker installation and there are no images that need to be preserved. If there are, then those images would need to be either pushed to the hub / DTR or exported into tar files and backed up in some fashion.</i></p></li>
+
 
 </ol>
 <h3>
