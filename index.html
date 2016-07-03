@@ -138,31 +138,136 @@ docker start/running, process 30840
 root@m1-host:-# docker info | grep -i storage
 WARNING: No swap limit support
 Storage Driver: btrfs
-root@m1-host:-#</code></pre><li>
+root@m1-host:-#</code></pre></li>
+</ol>
+
+<h3><a id="disk-space-issues-performance" class="anchor" href="#disk-space-issues-performance" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Managing Disk Space Issues and Performance</h3>
+<ol>
+  <li><p>Occasionally, we can expect to face out of disk space issues, especially when dealing with big images or with images that have multiple tags and an automation system that could overwhelm the amount of available disk space. Handling disk space issues in Btrfs is actually quite trivial and it does not even require restart of anything. Extending a volume with an additional device is as easy as running a single command on btrfs.</p>
+  <p>In this section, we'll simulate conditions for an out of disk space condition and use btrfs to address it and see that docker continues to function with no hiccups<p></li>
+  <li>Let's simulate some very large Docker containers using the <code>fallocate</code> command:
+  <pre><code>root@m1-host:-# docker run -it --name big-fat-container ubuntu bash
+Unable to find image 'ubuntu:latest' locally
+latest: Pulling from library/ubuntu
+
+f069f1d21059: Pull complete
+ecbeec5633cf: Pull complete
+ea6f18256d63: Pull complete
+54bde7b02897: Pull complete
+Digest: sha256:bbfd93a02a8487edb60f20316ebc966ddc7aa123c2e609185450b96971020097
+Status: Downloaded newer image for ubuntu:latest
+root@234dbb1f6fba:/# fallocate -l 3.4G simulation.ftty
+root@234dbb1f6fba:/# root@m1-host:-#</code></pre>
+  <p>The output of <code>df -lkh</code> should reflect that the device has reached its storage threshold:</p>
+  <pre><code>root@m1-host:-# df -lkh /var/lib/docker
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/xvdx       4.0G  3.6G   61M  99% /var/lib/docker
+root@m1-host:-#</code></pre></li>
+  <li><p>Let's run another container, it would fail, expectedly as there is not enough disk space</p>
+  <pre><code>root@m1-host:-# docker run -d tomcat
+Unable to find image 'tomcat:latest' locally
+latest: Pulling from library/tomcat
+
+5c90d4a2d1a8: Downloading [==================================================>] 51.35 MB/51.35 MB
+ab30c63719b1: Download complete
+be275827e8b7: Download complete
+9aa4ff75c34e: Download complete
+a30607f3daa1: Downloading [>                                                  ] 1.058 MB/77.64 MB
+227937ba18b6: Download complete
+01a8aa3698c9: Download complete
+7e5d5c1983f4: Downloading [==================================================>] 3.016 MB/3.016 MB
+b9e603623f64: Waiting
+2618070f43c0: Waiting
+4012135ceed0: Waiting
+docker: write /var/lib/docker/tmp/GetImageBlob755659910: no space left on device.
+See 'docker run --help'.
+root@m1-host:-#</code></pre></li>
+  <li><p>Btrfs' Logical Volume Management to the rescue. It is trivial now to easily expand our docker base directory (or btrfs volume, aptly) across additional, multiple disks. All it takes is a single command and an available block device to extend the volume upon. When we created <code>xvdx</code>, we also created an additional EBS device <code>xvdy</code>. We will not use this unformatted block device to extend the existing <code>/var/lib/docker</code> volume, as shown below. It is recommended to "balance" the data across the multiple disks to offer resilience and improve performance.</p>
+  <pre><code>root@m1-host:-# btrfs device add /dev/xvdy /var/lib/docker/
+root@m1-host:-# df -lkh /var/lib/docker
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/xvdx       8.0G  3.6G  4.1G  47% /var/lib/docker
+root@m1-host:-#</code></pre>
+  <p>The output of <code>df -lkh</code> shows only 47% used as opposed to 99% used earlier when the volume was mounted on a single device. Matter of fact, when using Btrfs, the usual unix commands <code>df</code> etc would not show accurate information due to the way Btrfs uses RAID. Therefore a more accurate representation of disk free space can be derived using <code>btrfs filesystem df /var/lib/docker</code>. The <code>filesystem</code> in the command may be shortened to <code>fi</code> as shown below:</p>
+  <pre><code>root@m1-host:-# btrfs fi df /var/lib/docker
+Data, single: total=3.57GiB, used=3.51GiB
+System, DUP: total=8.00MiB, used=16.00KiB
+System, single: total=4.00MiB, used=0.00
+Metadata, DUP: total=204.75MiB, used=10.95MiB
+Metadata, single: total=8.00MiB, used=0.00
+root@m1-host:-#</code></pre>
+  <p>Now, new images can be pulled and we can run containers without any disk space issues:</p>
+  <pre><code>root@m1-host:-# docker run -d tomcat
+Unable to find image 'tomcat:latest' locally
+latest: Pulling from library/tomcat
+
+5c90d4a2d1a8: Pull complete
+ab30c63719b1: Pull complete
+be275827e8b7: Pull complete
+9aa4ff75c34e: Pull complete
+a30607f3daa1: Pull complete
+227937ba18b6: Pull complete
+01a8aa3698c9: Pull complete
+7e5d5c1983f4: Pull complete
+b9e603623f64: Pull complete
+2618070f43c0: Pull complete
+4012135ceed0: Pull complete
+Digest: sha256:e7eb5e6620f88c94d403347033bd1698c73a2d9f91fca6d5dd4a4322bfde2379
+Status: Downloaded newer image for tomcat:latest
+33ee2f0dd564914510dd90c498b6ba559634d3329e63b81f6a03f9b6a6c4e338
+root@m1-host:-#</code></pre>
+  </li>
+  <li><p>As mentioned earlier, for better performance and resilience, it is a recommended practice that the disks be balanced. We can see that the disks are not balanced as most of the data was written to the first disk only. This is shown using <code>btrfs fi show /var/lib/docker</code></p>
+  <pre><code>root@m1-host:-# btrfs fi show /var/lib/docker
+Label: none  uuid: c6542f8f-66b6-45da-9552-87c21d4956a6
+  Total devices 2 FS bytes used 3.89GiB
+  devid    1 size 4.00GiB used 4.00GiB path /dev/xvdx
+  devid    2 size 4.00GiB used 832.00MiB path /dev/xvdy
+
+Btrfs v3.12
+root@m1-host:-#</code></pre>
+  <p>In the output above, all 4GiB of data has been written to <code>/dev/xvdx</code> while only about 832 MiB of space is used on <code>/dev/xvdy</code></p>
+  <p>The balancing of the data can be effected using the <code>btrfs balance</code> subcommand as shown below:</p>
+  <pre><code>root@m1-host:-# btrfs balance start /var/lib/docker
+Done, had to relocate 14 out of 14 chunks
+root@m1-host:-# btrfs fi show /var/lib/docker
+Label: none  uuid: c6542f8f-66b6-45da-9552-87c21d4956a6
+  Total devices 2 FS bytes used 3.89GiB
+  devid    1 size 4.00GiB used 1.91GiB path /dev/xvdx
+  devid    2 size 4.00GiB used 2.72GiB path /dev/xvdy
+
+Btrfs v3.12
+root@m1-host:-#</code></pre></li>
   </ol>
-<h3>
-<a id="creating-pages-manually" class="anchor" href="#creating-pages-manually" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Creating pages manually</h3>
-
-<p>If you prefer to not use the automatic generator, push a branch named <code>gh-pages</code> to your repository to create a page manually. In addition to supporting regular HTML content, GitHub Pages support Jekyll, a simple, blog aware static site generator. Jekyll makes it easy to create site-wide headers and footers without having to copy them across every page. It also offers intelligent blog support and other advanced templating features.</p>
 
 <h3>
-<a id="authors-and-contributors" class="anchor" href="#authors-and-contributors" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Authors and Contributors</h3>
+<a id="summary" class="anchor" href="#summary" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Summary</h3>
 
-<p>You can <a href="https://help.github.com/articles/basic-writing-and-formatting-syntax/#mentioning-users-and-teams" class="user-mention">@mention</a> a GitHub username to generate a link to their profile. The resulting <code>&lt;a&gt;</code> element will link to the contributor’s GitHub Profile. For example: In 2007, Chris Wanstrath (<a href="https://github.com/defunkt" class="user-mention">@defunkt</a>), PJ Hyett (<a href="https://github.com/pjhyett" class="user-mention">@pjhyett</a>), and Tom Preston-Werner (<a href="https://github.com/mojombo" class="user-mention">@mojombo</a>) founded GitHub.</p>
+<p>We were able to see how Btrfs' powerful features allows us to manage disk space issues and improve performance and resiliency through the inbuilt RAID support. BTRFS is an advanced and future generation file system and fits very well with Docker's way of working. Since Btrfs treats all disks as a logical volume, it is trivial to extend volumes using a single command and it takes effect without the need to restart docker or make any other configuration changes.</p>
 
-<h3>
-<a id="support-or-contact" class="anchor" href="#support-or-contact" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Support or Contact</h3>
+<p>There are some excellent and more indepth articles at <a href="https://docs.docker.com/engine/userguide/storagedriver/btrfs-driver/">Docker and Btrfs in practice</a> on docs.docker.com.</p>
 
 <p>Having trouble with Pages? Check out our <a href="https://help.github.com/pages">documentation</a> or <a href="https://github.com/contact">contact support</a> and we’ll help you sort it out.</p>
 
       <footer class="site-footer">
-        <span class="site-footer-owner"><a href="https://github.com/anokun7/docker-btrfs">Docker-btrfs</a> is maintained by <a href="https://github.com/anokun7">anokun7</a>.</span>
+        <span class="site-footer-credits"><a href="https://anokun7.github.io">Home</a></span>
+  <hr/>
+        <span class="site-footer-owner"><a href="https://github.com/anokun7/docker-btrfs">Working with Docker on Btrfs</a> is maintained by <a href="https://github.com/anokun7">anokun7</a>.</span>
 
-        <span class="site-footer-credits">This page was generated by <a href="https://pages.github.com">GitHub Pages</a> using the <a href="https://github.com/jasonlong/cayman-theme">Cayman theme</a> by <a href="https://twitter.com/jasonlong">Jason Long</a>.</span>
       </footer>
 
     </section>
 
-  
+            <script type="text/javascript">
+            var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");
+            document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
+          </script>
+          <script type="text/javascript">
+            try {
+              var pageTracker = _gat._getTracker("UA-1020564-1");
+            pageTracker._trackPageview();
+            } catch(err) {}
+          </script>
+
   </body>
 </html>
