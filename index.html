@@ -27,6 +27,8 @@
 
 <p>In the sections below, we shall see how easy it is to work with Btrfs and specifically how to recover from disk out-of-space issues.</p>
 <p>What we'll use here is a stock Ubuntu 14.04.3 LTS system. We'll install Docker 1.11, the Btrfs package, configure Docker to use btrfs as the storage driver. We will then simulate a disk out-of-space issue and then look at steps to recover from it without losing any data or applications running on the system. For the purposes of understanding all commands are typed out by hand, and it is urged that these manual steps are automated to make the entire recovery process more reliable.</p>
+
+<h3><a id="start-with-btrfs" class="anchor" href="#start-with-btrfs" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Btrfs Quickstart</h3>
 <ol>
   <li> <p>Let's login to our Ubuntu 14.04 box and check if btrfs is installed and available. Since, we will be dealing with making changes to filesystems it will be convenient to run all commands as root (or use sudo to prefix all commands).</p>
   <pre><code>root@m1-host:-# btrfs
@@ -70,7 +72,7 @@ root@m1-host:-#</code></pre></li>
 Btrfs v3.12
 root@m1-host:-#</code></pre></li>
   <li><p>Also, ensure that the current version of docker is installed. The simplest way to get docker up and running is <code>curl -fsSL https://get.docker.com | sh</code></p></li>
-  <li><p>Btrfs works with block devices, so we would need one. Let's see what all block devices are attached to this system:</p>
+  <li><p>Btrfs works with block devices, so we would need one. Let's see what all block devices are attached to this system, using the <code>lsblk</code> command:</p>
   <pre></code>root@m1-host:-# lsblk
 NAME    MAJ:MIN RM SIZE RO TYPE MOUNTPOINT
 xvda    202:0    0   8G  0 disk
@@ -86,16 +88,58 @@ xvda    202:0     0   8G  0 disk
 xvdx    202:5888  0   4G  0 disk
 xvdy    202:5888  0   4G  0 disk
 root@m1-host:-#</code></pre></li>
-  <li><p>We ned to change docker to use <code>btrfs</code> as the storage driver. Currently (as the default on Ubuntu), docker is using <code>extfs</code> as indicated by the output of <code>docker info | grep -i filesystem</code></p>
+  <li><p>We need to change docker to use <code>btrfs</code> as the storage driver. Currently (as the default on Ubuntu), docker is using <code>extfs</code> as indicated by the output of <code>docker info | grep -i filesystem</code></p>
   <pre></code>root@m1-host:-# docker info | grep Filesystem
 WARNING: No swap limit support
  Backing Filesystem: extfs
 root@m1-host:-#</code></pre>
-  <p>So, let's shut down docker before we make any changes</p>
-  <p><i>Note: This is assuming that is a brand new docker installation and there are no images that need to be preserved. If there are, then those images would need to be either pushed to the hub / DTR or exported into tar files and backed up in some fashion.</i></p></li>
-
-
+  <p>So, let's shut down docker before we make any changes using <code>service docker stop</code>.</p>
+  <p><i>Note: This is assuming that this is a brand new docker installation and there are no images that need to be preserved. If there are, then those images would need to be either pushed to the hub / DTR or exported into tar files and backed up in some fashion.</i></p></li>
 </ol>
+
+<h3><a id="getting-docker-to-use-btrfs" class="anchor" href="#getting-docker-to-use-btrfs" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Getting Docker to use Btrfs</h3>
+<ol>
+  <li><p>Let's format the first disk <code>xvdx</code> to use the btrfs filesystem. The wonderful aspect of this exercise is that btrfs behaves as a logical volume manager and as such there is no need to partition the disk or anything. We could partition the disk if we really wanted to, and not because btrfs needed it. We'll use <code>mkfs.btrfs</code> for this task.</p>
+  <pre><code>root@m1-host:-# mkfs.btrfs -f /dev/xvdx
+
+WARNING! - Btrfs v3.12 IS EXPERIMENTAL
+WARNING! - see http://btrfs.wiki.kernel.org before using
+
+Turning ON incompat feature 'extref': increased hardlink limit per file to 65536
+fs created label (null) on /dev/xvdx
+  nodesize 16384 leafsize 16384 sectorsize 4096 size 4.00GiB
+Btrfs v3.12
+root@m1-host:-#</code></pre></li>
+  <li><p>Now that the btrfs filesystem has been created, let's mount it on the same path that docker uses as the root for all containers, images and volumes on the host which is <code>/var/lib/docker</code>.</p>
+  <pre><code>root@m1-host:-# df -lkh
+Filesystem      Size  Used Avail Use% Mounted on
+udev            3.9G   12K  3.9G   1% /dev
+tmpfs           799M  392K  799M   1% /run
+/dev/xvda1      7.8G  3.1G  4.3G  43% /
+none            4.0K     0  4.0K   0% /sys/fs/cgroup
+none            5.0M     0  5.0M   0% /run/lock
+none            3.9G     0  3.9G   0% /run/shm
+none            100M     0  100M   0% /run/user
+root@m1-host:-# mount /dev/xvdx /var/lib/docker
+root@m1-host:-# df -lkh
+Filesystem      Size  Used Avail Use% Mounted on
+udev            3.9G   12K  3.9G   1% /dev
+tmpfs           799M  392K  799M   1% /run
+/dev/xvda1      7.8G  3.1G  4.3G  43% /
+none            4.0K     0  4.0K   0% /sys/fs/cgroup
+none            5.0M     0  5.0M   0% /run/lock
+none            3.9G     0  3.9G   0% /run/shm
+none            100M     0  100M   0% /run/user
+/dev/xvdx       4.0G  320K  3.6G   1% /var/lib/docker
+root@m1-host:-#</code></pre></li>
+  <li><p>Running <code>docker info</code> after bringing the docker daemon back up should reflect that docker is indeed using the <code>btrfs</code> (as the) storage driver.</p>
+  <pre><code>root@m1-host:-# service docker start
+docker start/running, process 30840
+root@m1-host:-# docker info | grep -i storage
+WARNING: No swap limit support
+Storage Driver: btrfs
+root@m1-host:-#</code></pre><li>
+  </ol>
 <h3>
 <a id="creating-pages-manually" class="anchor" href="#creating-pages-manually" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Creating pages manually</h3>
 
