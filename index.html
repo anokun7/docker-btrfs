@@ -27,7 +27,17 @@
 
 <p>In the sections below, we shall see how easy it is to work with Btrfs and specifically how to recover from disk out-of-space issues.</p>
 <p>What we'll use here is a stock Ubuntu 14.04.3 LTS system. We'll install Docker 1.11, the Btrfs package, configure Docker to use btrfs as the storage driver. We will then simulate a disk out-of-space issue and then look at steps to recover from it without losing any data or applications running on the system. For the purposes of understanding all commands are typed out by hand, and it is urged that these manual steps are automated to make the entire recovery process more reliable.</p>
+<ol>
+  <li> <p>Let's login to our Ubuntu 14.04 box and check if btrfs is installed and available. Since, we will be dealing with making changes to filesystems it will be convenient to run all commands as root (or use sudo to prefix all commands).</p>
+  <pre><code>
+root@m1-host:-# btrfs
+The program 'btrfs' is currently not installed. You can install it by typing:
+apt-get install btrfs-tools
+root@m1-host:-#
+</code></pre>
+  <p>Expectedly, btrfs is not installed on this Ubuntu system<p></li>
 
+</ol>
 <h3>
 <a id="creating-pages-manually" class="anchor" href="#creating-pages-manually" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Creating pages manually</h3>
 
