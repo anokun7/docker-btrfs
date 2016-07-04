@@ -143,7 +143,7 @@ root@m1-host:-#</code></pre></li>
 
 <h3><a id="disk-space-issues-performance" class="anchor" href="#disk-space-issues-performance" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Managing Disk Space Issues and Performance</h3>
 <ol>
-  <li><p>Occasionally, we can expect to face out of disk space issues, especially when dealing with big images or with images that have multiple tags and an automation system that could overwhelm the amount of available disk space. Handling disk space issues in Btrfs is actually quite trivial and it does not even require restart of anything. Extending a volume with an additional device is as easy as running a single command on btrfs.</p>
+  <li><p>Occasionally, we can expect to face 'out of disk space' issues, especially when dealing with big images or with images that have multiple tags and a CI / CD or automation system that could overwhelm the amount of available disk space. Handling disk space issues in Btrfs is actually quite trivial and it does not even require a restart of anything. Extending a volume with an additional device is as easy as running a single command on btrfs.</p>
   <p>In this section, we'll simulate conditions for an out of disk space condition and use btrfs to address it and see that docker continues to function with no hiccups<p></li>
   <li>Let's simulate some very large Docker containers using the <code>fallocate</code> command:
   <pre><code>root@m1-host:-# docker run -it --name big-fat-container ubuntu bash
@@ -182,13 +182,13 @@ b9e603623f64: Waiting
 docker: write /var/lib/docker/tmp/GetImageBlob755659910: no space left on device.
 See 'docker run --help'.
 root@m1-host:-#</code></pre></li>
-  <li><p>Btrfs' Logical Volume Management to the rescue. It is trivial now to easily expand our docker base directory (or btrfs volume, aptly) across additional, multiple disks. All it takes is a single command and an available block device to extend the volume upon. When we created <code>xvdx</code>, we also created an additional EBS device <code>xvdy</code>. We will not use this unformatted block device to extend the existing <code>/var/lib/docker</code> volume, as shown below. It is recommended to "balance" the data across the multiple disks to offer resilience and improve performance.</p>
+  <li><p>Btrfs' Logical Volume Management to the rescue. It is quite trivial now to easily expand our docker base directory (or btrfs volume, aptly) across additional, multiple disks. All it takes is a single command and an available block device to extend the volume upon. When we created <code>xvdx</code>, we also created an additional EBS device <code>xvdy</code>. We will now use this unformatted block device to extend the existing <code>/var/lib/docker</code> volume, as shown below. Once we do this, it is recommended to "balance" the data across the multiple disks to offer resilience and improve performance.</p>
   <pre><code>root@m1-host:-# btrfs device add /dev/xvdy /var/lib/docker/
 root@m1-host:-# df -lkh /var/lib/docker
 Filesystem      Size  Used Avail Use% Mounted on
 /dev/xvdx       8.0G  3.6G  4.1G  47% /var/lib/docker
 root@m1-host:-#</code></pre>
-  <p>The output of <code>df -lkh</code> shows only 47% used as opposed to 99% used earlier when the volume was mounted on a single device. Matter of fact, when using Btrfs, the usual unix commands <code>df</code> etc would not show accurate information due to the way Btrfs uses RAID. Therefore a more accurate representation of disk free space can be derived using <code>btrfs filesystem df /var/lib/docker</code>. The <code>filesystem</code> in the command may be shortened to <code>fi</code> as shown below:</p>
+  <p>The output of <code>df -lkh</code> shows only 47% used as opposed to 99% used earlier when the volume was mounted on a single device. Matter of fact, when using Btrfs, the usual unix commands <code>df</code> etc would not show accurate information due to the way Btrfs uses RAID. Therefore, a more accurate representation of disk free space can be derived using <code>btrfs filesystem df /var/lib/docker</code>. The <code>filesystem</code> in the command may be shortened to <code>fi</code> as shown below:</p>
   <pre><code>root@m1-host:-# btrfs fi df /var/lib/docker
 Data, single: total=3.57GiB, used=3.51GiB
 System, DUP: total=8.00MiB, used=16.00KiB
